@@ -1,0 +1,5 @@
+{
+  "name": "BepViet",
+  "description": "A social cooking platform for sharing and discovering Vietnamese recipes, featuring a user feed, recipe collections, and an admin dashboard.",
+  "requestFramePermissions": []
+}
