@@ -48,7 +48,10 @@ const ProfilePage: React.FC = () => {
         setLoading(true);
         const data = await apiGetUserSummary();
         setSummary(data);
-        setEditForm({ name: data.name, email: data.email });
+        // Chỉ khởi tạo editForm khi summary được load lần đầu
+        if (!summary) {
+          setEditForm({ name: data.name, email: data.email });
+        }
       } catch (err: any) {
         setError(err.message || 'Không tải được thông tin người dùng');
       } finally {
@@ -163,18 +166,45 @@ const ProfilePage: React.FC = () => {
       }
     };
 
+  const handleCloseEditModal = () => {
+    // Reset form về giá trị hiện tại từ summary khi đóng modal
+    if (summary) {
+      setEditForm({ name: summary.name, email: summary.email });
+    }
+    setShowEditModal(false);
+  };
+
   const handleEditProfile = async () => {
-    if (!editForm.name.trim() || !editForm.email.trim()) {
-      toast.error('Vui lòng điền đầy đủ thông tin');
+    if (!editForm.name.trim()) {
+      toast.error('Tên không được để trống');
+      return;
+    }
+
+    if (!editForm.email.trim()) {
+      toast.error('Email không được để trống');
       return;
     }
 
     try {
       setUpdatingProfile(true);
-      const updated = await apiUpdateProfile({
-        name: editForm.name.trim(),
-        email: editForm.email.trim(),
-      });
+      const updateData: { name?: string; email?: string } = {};
+      
+      // Chỉ gửi các trường đã thay đổi
+      if (editForm.name.trim() !== summary?.name) {
+        updateData.name = editForm.name.trim();
+      }
+      if (editForm.email.trim() !== summary?.email) {
+        updateData.email = editForm.email.trim();
+      }
+
+      // Kiểm tra có thay đổi gì không
+      if (Object.keys(updateData).length === 0) {
+        toast.info('Không có thay đổi nào');
+        handleCloseEditModal();
+        return;
+      }
+
+      const updated = await apiUpdateProfile(updateData);
 
       // Cập nhật local storage
       const stored = getStoredUser();
@@ -199,7 +229,7 @@ const ProfilePage: React.FC = () => {
           : prev
       );
       toast.success('Cập nhật thông tin thành công');
-      setShowEditModal(false);
+      handleCloseEditModal();
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Không cập nhật được thông tin');
@@ -276,10 +306,10 @@ const ProfilePage: React.FC = () => {
                 </label>
                 <div className="flex flex-col justify-center">
                   <p className="text-text-light dark:text-text-dark text-2xl font-bold leading-tight tracking-[-0.015em]">
-                    {user?.name || 'Người dùng BepViet'}
+                    {summary?.name || user?.name || 'Người dùng BepViet'}
                   </p>
                   <p className="text-text-muted-light dark:text-text-muted-dark text-base font-normal leading-normal">
-                    {user?.email || 'Chưa có email'}
+                    {summary?.email || user?.email || 'Chưa có email'}
                   </p>
                   <p className="text-text-muted-light dark:text-text-muted-dark text-sm font-normal leading-normal mt-1">
                     Thành viên BepViet
@@ -288,7 +318,12 @@ const ProfilePage: React.FC = () => {
               </div>
               <div className="flex w-full max-w-[480px] gap-3 @[480px]:w-auto">
                 <button
-                  onClick={() => setShowEditModal(true)}
+                  onClick={() => {
+                    if (summary) {
+                      setEditForm({ name: summary.name, email: summary.email });
+                    }
+                    setShowEditModal(true);
+                  }}
                   className="flex min-w-[84px] max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-10 px-4 bg-background-light dark:bg-background-dark text-text-light dark:text-text-dark text-sm font-bold leading-normal tracking-[0.015em] flex-1 @[480px]:flex-auto hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors border border-border-light dark:border-border-dark"
                 >
                   <span className="truncate">Chỉnh sửa profile</span>
@@ -449,7 +484,7 @@ const ProfilePage: React.FC = () => {
       {showEditModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          onClick={() => setShowEditModal(false)}
+          onClick={handleCloseEditModal}
         >
           <div
             className="w-full max-w-md bg-white dark:bg-card-dark rounded-xl shadow-2xl border border-border-light dark:border-border-dark"
@@ -461,7 +496,7 @@ const ProfilePage: React.FC = () => {
                   Chỉnh sửa thông tin
                 </h2>
                 <button
-                  onClick={() => setShowEditModal(false)}
+                  onClick={handleCloseEditModal}
                   className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-text-muted-light dark:text-text-muted-dark"
                 >
                   <span className="material-symbols-outlined">close</span>
@@ -497,7 +532,7 @@ const ProfilePage: React.FC = () => {
 
                 <div className="flex gap-3 pt-4">
                   <button
-                    onClick={() => setShowEditModal(false)}
+                    onClick={handleCloseEditModal}
                     className="flex-1 px-4 py-2 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-card-dark text-text-light dark:text-text-dark hover:bg-gray-50 dark:hover:bg-gray-800"
                   >
                     Hủy
@@ -514,7 +549,7 @@ const ProfilePage: React.FC = () => {
                 <div className="pt-4 border-t border-border-light dark:border-border-dark">
                   <button
                     onClick={() => {
-                      setShowEditModal(false);
+                      handleCloseEditModal();
                       setShowPasswordModal(true);
                     }}
                     className="w-full px-4 py-2 rounded-lg border border-primary text-primary font-medium hover:bg-primary/5"
