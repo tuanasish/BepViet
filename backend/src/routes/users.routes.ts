@@ -1,12 +1,17 @@
 import express from 'express';
 import { Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
-import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
+import {
+  authMiddleware,
+  AuthenticatedRequest,
+} from '../middleware/auth.middleware';
 import { RecipeModel } from '../models/recipe.model';
 import { CollectionModel } from '../models/collection.model';
 import { PostModel } from '../models/post.model';
 import { UserModel } from '../models/user.model';
 import { validateAndCleanText } from '../utils/badwords';
+import { generateRecipeSlug, normalizeRecipeSteps } from '../utils/recipes';
+import { RecipeStatus } from '../types/db';
 
 const router = express.Router();
 
@@ -246,6 +251,166 @@ router.patch(
       return res
         .status(500)
         .json({ message: 'Lỗi server khi đổi mật khẩu.' });
+    }
+  }
+);
+
+// POST /api/users/me/recipes - user tạo công thức mới (chờ duyệt)
+router.post(
+  '/me/recipes',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const {
+        title,
+        description,
+        images,
+        cookingTimeMinutes,
+        difficulty,
+        servings,
+        category,
+        tags,
+        ingredients,
+        steps,
+      } = req.body as {
+        title?: string;
+        description?: string;
+        images?: string[];
+        cookingTimeMinutes?: number;
+        difficulty?: 'easy' | 'medium' | 'hard';
+        servings?: number;
+        category?: string;
+        tags?: string[];
+        ingredients?: Array<{ name: string; amount?: string; note?: string }>;
+        steps?: Array<{ order?: number; title?: string; content: string; imageUrl?: string }>;
+      };
+
+      if (!title || !title.trim()) {
+        return res
+          .status(400)
+          .json({ message: 'Tiêu đề không được để trống.' });
+      }
+
+      if (!cookingTimeMinutes || cookingTimeMinutes < 1) {
+        return res
+          .status(400)
+          .json({ message: 'Thời gian nấu phải lớn hơn 0.' });
+      }
+
+      if (!difficulty || !['easy', 'medium', 'hard'].includes(difficulty)) {
+        return res.status(400).json({ message: 'Độ khó không hợp lệ.' });
+      }
+
+      if (!category || !category.trim()) {
+        return res
+          .status(400)
+          .json({ message: 'Danh mục không được để trống.' });
+      }
+
+      if (!steps || !Array.isArray(steps) || steps.length === 0) {
+        return res
+          .status(400)
+          .json({ message: 'Công thức phải có ít nhất một bước.' });
+      }
+
+      let slug = generateRecipeSlug(title);
+      let existingRecipe = await RecipeModel.findOne({ slug });
+      if (existingRecipe) {
+        slug = `${slug}-${Date.now()}`;
+      }
+
+      const sortedSteps = normalizeRecipeSteps(steps);
+
+      const recipe = await RecipeModel.create({
+        authorId: userId,
+        title: title.trim(),
+        slug,
+        description: description?.trim() || undefined,
+        images: Array.isArray(images) ? images : [],
+        cookingTimeMinutes,
+        difficulty,
+        servings: servings && servings > 0 ? servings : undefined,
+        category: category.trim(),
+        tags: Array.isArray(tags)
+          ? tags
+              .filter((t) => t && t.trim())
+              .map((t) => t.trim())
+          : [],
+        ingredients: Array.isArray(ingredients)
+          ? ingredients.filter(
+              (ing) => ing && ing.name && ing.name.trim()
+            )
+          : [],
+        steps: sortedSteps,
+        status: 'pending_review',
+      });
+
+      return res.status(201).json({
+        id: recipe._id,
+        title: recipe.title,
+        slug: recipe.slug,
+        description: recipe.description,
+        images: recipe.images,
+        cookingTimeMinutes: recipe.cookingTimeMinutes,
+        difficulty: recipe.difficulty,
+        servings: recipe.servings,
+        category: recipe.category,
+        tags: recipe.tags,
+        status: recipe.status,
+      });
+    } catch (err) {
+      console.error('Error in POST /api/users/me/recipes', err);
+      return res
+        .status(500)
+        .json({ message: 'Lỗi server khi tạo công thức.' });
+    }
+  }
+);
+
+// GET /api/users/me/recipes - danh sách công thức của user hiện tại
+router.get(
+  '/me/recipes',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const status = req.query.status as RecipeStatus | undefined;
+
+      const filter: any = {
+        authorId: new Types.ObjectId(userId),
+      };
+
+      if (status && ['draft', 'pending_review', 'published', 'rejected'].includes(status)) {
+        filter.status = status;
+      }
+
+      const recipes = await RecipeModel.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .select(
+          'title slug images cookingTimeMinutes difficulty category tags status'
+        )
+        .lean();
+
+      const result = recipes.map((r: any) => ({
+        id: r._id,
+        title: r.title,
+        slug: r.slug,
+        image: r.images?.[0] || null,
+        timeMinutes: r.cookingTimeMinutes,
+        difficulty: r.difficulty,
+        category: r.category,
+        tags: r.tags || [],
+        status: r.status,
+      }));
+
+      return res.json(result);
+    } catch (err) {
+      console.error('Error in GET /api/users/me/recipes', err);
+      return res
+        .status(500)
+        .json({ message: 'Lỗi server khi lấy danh sách công thức.' });
     }
   }
 );

@@ -133,6 +133,113 @@ export async function apiGetRecipes(filters?: RecipeFilters): Promise<RecipesRes
   return (await res.json()) as RecipesResponse;
 }
 
+// Tags công thức
+export interface RecipeTagsResponse {
+  tags: string[];
+}
+
+export async function apiGetRecipeTags(): Promise<RecipeTagsResponse> {
+  const res = await fetch(`${API_BASE}/api/recipes/tags`);
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không lấy được danh sách tag công thức');
+  }
+  return (await res.json()) as RecipeTagsResponse;
+}
+
+// Công thức của user (để gắn vào bài viết)
+export interface UserRecipeSummary {
+  id: string;
+  title: string;
+  slug: string;
+  image: string | null;
+  timeMinutes: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+  category: string;
+  tags: string[];
+  status: string;
+}
+
+export async function apiGetMyRecipesForAttach(
+  status?: string
+): Promise<UserRecipeSummary[]> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để lấy công thức của bạn');
+  }
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+
+  const res = await fetch(
+    `${API_BASE}/api/users/me/recipes${params.toString() ? `?${params.toString()}` : ''}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không lấy được danh sách công thức của bạn');
+  }
+  return (await res.json()) as UserRecipeSummary[];
+}
+
+export interface CreateMyRecipePayload {
+  title: string;
+  description?: string;
+  images?: string[];
+  cookingTimeMinutes: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+  servings?: number;
+  category: string;
+  tags?: string[];
+  ingredients?: Array<{ name: string; amount?: string; note?: string }>;
+  steps: Array<{ order?: number; title?: string; content: string; imageUrl?: string }>;
+}
+
+export async function apiCreateMyRecipe(
+  payload: CreateMyRecipePayload
+): Promise<{
+  id: string;
+  title: string;
+  slug: string;
+  images: string[];
+  cookingTimeMinutes: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+  category: string;
+  tags: string[];
+  status: string;
+}> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để tạo công thức');
+  }
+  const res = await fetch(`${API_BASE}/api/users/me/recipes`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không tạo được công thức');
+  }
+  return (await res.json()) as {
+    id: string;
+    title: string;
+    slug: string;
+    images: string[];
+    cookingTimeMinutes: number;
+    difficulty: 'easy' | 'medium' | 'hard';
+    category: string;
+    tags: string[];
+    status: string;
+  };
+}
+
 export interface RecipeDetail {
   id: string;
   title: string;
@@ -379,6 +486,17 @@ export interface FeedPost {
   likesCount: number;
   commentsCount: number;
   createdAt: string;
+  ratingCount?: number;
+  averageRating?: number;
+  viewsCount?: number;
+  relatedRecipe?: {
+    id: string;
+    title: string;
+    slug: string;
+    image: string | null;
+    timeMinutes: number;
+    difficulty: 'easy' | 'medium' | 'hard';
+  } | null;
 }
 
 export interface PostComment {
@@ -390,12 +508,30 @@ export interface PostComment {
   createdAt: string;
 }
 
-export async function apiGetFeed(): Promise<FeedPost[]> {
-  const res = await fetch(`${API_BASE}/api/posts`);
+export type FeedSort = 'latest' | 'likes';
+
+export interface FeedResponse {
+  posts: FeedPost[];
+  page: number;
+  totalPages: number;
+  total: number;
+}
+
+export async function apiGetFeed(
+  page: number = 1,
+  sort: FeedSort = 'latest'
+): Promise<FeedResponse> {
+  const params = new URLSearchParams();
+  if (page && page > 1) params.set('page', page.toString());
+  if (sort && sort !== 'latest') params.set('sort', sort);
+
+  const res = await fetch(
+    `${API_BASE}/api/posts${params.toString() ? `?${params.toString()}` : ''}`
+  );
   if (!res.ok) {
     throw new Error('Không tải được feed');
   }
-  return (await res.json()) as FeedPost[];
+  return (await res.json()) as FeedResponse;
 }
 
 export async function apiGetPostById(postId: string): Promise<FeedPost> {
@@ -409,7 +545,8 @@ export async function apiGetPostById(postId: string): Promise<FeedPost> {
 
 export async function apiCreatePost(
   content: string,
-  imageUrl?: string
+  imageUrl?: string,
+  relatedRecipeId?: string
 ): Promise<FeedPost> {
   const token = getToken();
   if (!token) {
@@ -418,6 +555,9 @@ export async function apiCreatePost(
   const body: any = { content };
   if (imageUrl) {
     body.imageUrls = [imageUrl];
+  }
+  if (relatedRecipeId) {
+    body.relatedRecipeId = relatedRecipeId;
   }
   const res = await fetch(`${API_BASE}/api/posts`, {
     method: 'POST',
@@ -525,6 +665,49 @@ export async function apiGetPostComments(
     throw new Error(data?.message || 'Không thể tải bình luận');
   }
   return (await res.json()) as PostComment[];
+}
+
+export async function apiRatePost(
+  postId: string,
+  value: number
+): Promise<{ ratingCount: number; averageRating: number }> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để đánh giá bài viết');
+  }
+  const res = await fetch(`${API_BASE}/api/posts/${postId}/rating`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không thể đánh giá bài viết');
+  }
+  return (await res.json()) as { ratingCount: number; averageRating: number };
+}
+
+export async function apiViewPost(
+  postId: string
+): Promise<{ viewsCount: number }> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để xem bài viết');
+  }
+  const res = await fetch(`${API_BASE}/api/posts/${postId}/view`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không thể ghi nhận lượt xem');
+  }
+  return (await res.json()) as { viewsCount: number };
 }
 
 export async function apiDeleteComment(commentId: string): Promise<void> {

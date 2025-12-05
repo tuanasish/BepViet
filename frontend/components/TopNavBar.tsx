@@ -80,6 +80,15 @@ const TopNavBar: React.FC = () => {
               >
                 Bộ sưu tập
               </button>
+              {isLoggedIn() && (
+                <button
+                  type="button"
+                  onClick={() => handleNavigateProtected('/recipe/create')}
+                  className={`text-sm ${isActive('/recipe/create')}`}
+                >
+                  Công thức
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => handleNavigateProtected('/profile')}

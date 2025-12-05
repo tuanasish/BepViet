@@ -248,7 +248,7 @@ const AdminRecipeCreatePage: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-text-light dark:text-text-dark mb-2">
-                    Thời gian nấu (phút) *
+                    Thời gian chế biến (phút) *
                   </label>
                   <input
                     type="number"

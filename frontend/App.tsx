@@ -7,6 +7,8 @@ import CollectionPage from './pages/user/CollectionPage';
 import SearchPage from './pages/user/SearchPage';
 import RecipeDetailPage from './pages/user/RecipeDetailPage';
 import ProfilePage from './pages/user/ProfilePage';
+import UserRecipeManagePage from './pages/user/UserRecipeManagePage';
+import UserRecipeCreatePage from './pages/user/UserRecipeCreatePage';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminRecipePage from './pages/admin/AdminRecipePage';
 import AdminRecipeEditPage from './pages/admin/AdminRecipeEditPage';
@@ -29,6 +31,8 @@ const App: React.FC = () => {
         <Route path="/collection" element={<CollectionPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/recipe/:id" element={<RecipeDetailPage />} />
+        <Route path="/recipe/create" element={<UserRecipeManagePage />} />
+        <Route path="/recipe/new" element={<UserRecipeCreatePage />} />
         <Route path="/profile" element={<ProfilePage />} />
 
         {/* Admin Routes */}

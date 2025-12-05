@@ -10,6 +10,7 @@ import {
   adminMiddleware,
   AuthenticatedRequest,
 } from '../middleware/auth.middleware';
+import { generateRecipeSlug, normalizeRecipeSteps } from '../utils/recipes';
 
 const router = express.Router();
 
@@ -513,19 +514,6 @@ router.delete('/posts/:id', async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// Utility function để tạo slug từ title
-function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Loại bỏ dấu
-    .replace(/[^a-z0-9\s-]/g, '') // Loại bỏ ký tự đặc biệt
-    .trim()
-    .replace(/\s+/g, '-') // Thay khoảng trắng bằng dấu gạch ngang
-    .replace(/-+/g, '-') // Loại bỏ nhiều dấu gạch ngang liên tiếp
-    .substring(0, 100); // Giới hạn độ dài
-}
-
 // POST /api/admin/recipes - tạo công thức mới (admin)
 router.post('/recipes', async (req: AuthenticatedRequest, res) => {
   try {
@@ -578,7 +566,7 @@ router.post('/recipes', async (req: AuthenticatedRequest, res) => {
     }
 
     // Tạo slug từ title
-    let slug = generateSlug(title);
+    let slug = generateRecipeSlug(title);
     // Kiểm tra slug có trùng không
     let existingRecipe = await RecipeModel.findOne({ slug });
     if (existingRecipe) {
@@ -586,15 +574,7 @@ router.post('/recipes', async (req: AuthenticatedRequest, res) => {
     }
 
     // Sắp xếp và validate steps
-    const sortedSteps = steps
-      .filter((step) => step && step.content && step.content.trim())
-      .map((step, index) => ({
-        order: step.order !== undefined ? step.order : index + 1,
-        title: step.title?.trim() || undefined,
-        content: step.content.trim(),
-        imageUrl: step.imageUrl?.trim() || undefined,
-      }))
-      .sort((a, b) => a.order - b.order);
+    const sortedSteps = normalizeRecipeSteps(steps);
 
     // Tạo công thức mới
     const recipe = await RecipeModel.create({
@@ -692,7 +672,7 @@ router.put('/recipes/:id', async (req: AuthenticatedRequest, res) => {
       }
       recipe.title = title.trim();
       // Tạo slug mới nếu title thay đổi
-      const newSlug = generateSlug(title);
+      const newSlug = generateRecipeSlug(title);
       // Kiểm tra slug có trùng không (trừ chính nó)
       const existingRecipe = await RecipeModel.findOne({ slug: newSlug, _id: { $ne: id } });
       if (existingRecipe) {
@@ -750,16 +730,7 @@ router.put('/recipes/:id', async (req: AuthenticatedRequest, res) => {
         return res.status(400).json({ message: 'Công thức phải có ít nhất một bước.' });
       }
       // Sắp xếp steps theo order và validate
-      const sortedSteps = steps
-        .filter((step) => step && step.content && step.content.trim())
-        .map((step, index) => ({
-          order: step.order !== undefined ? step.order : index + 1,
-          title: step.title?.trim() || undefined,
-          content: step.content.trim(),
-          imageUrl: step.imageUrl?.trim() || undefined,
-        }))
-        .sort((a, b) => a.order - b.order);
-      recipe.steps = sortedSteps;
+      recipe.steps = normalizeRecipeSteps(steps);
     }
 
     if (status !== undefined) {

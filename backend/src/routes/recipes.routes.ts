@@ -3,6 +3,29 @@ import { RecipeModel } from '../models/recipe.model';
 
 const router = express.Router();
 
+// GET /api/recipes/tags - lấy danh sách tag đang dùng trong các công thức
+router.get('/tags', async (_req, res) => {
+  try {
+    const docs = await RecipeModel.aggregate([
+      { $match: { status: 'published' } },
+      { $project: { tags: 1 } },
+      { $unwind: '$tags' },
+      { $group: { _id: null, tags: { $addToSet: '$tags' } } },
+    ]);
+
+    const tags = docs[0]?.tags || [];
+
+    return res.json({
+      tags,
+    });
+  } catch (err) {
+    console.error('Error in GET /api/recipes/tags', err);
+    return res
+      .status(500)
+      .json({ message: 'Lỗi server khi lấy danh sách tags công thức.' });
+  }
+});
+
 // GET /api/recipes - danh sách công thức (cho trang Explore)
 router.get('/', async (req, res) => {
   try {
@@ -32,13 +55,9 @@ router.get('/', async (req, res) => {
 
     const filter: any = { status: 'published' };
 
-    // Tìm kiếm text (tên, mô tả, nguyên liệu)
+    // Tìm kiếm text - chỉ tìm trong trường tên món (title)
     if (q && q.trim()) {
-      filter.$or = [
-        { title: { $regex: q.trim(), $options: 'i' } },
-        { description: { $regex: q.trim(), $options: 'i' } },
-        { 'ingredients.name': { $regex: q.trim(), $options: 'i' } },
-      ];
+      filter.title = { $regex: q.trim(), $options: 'i' };
     }
 
     // Filter theo danh mục
@@ -84,6 +103,7 @@ router.get('/', async (req, res) => {
     const limit = parseInt(limitParam || '50');
     const skip = (page - 1) * limit;
 
+    // Tìm kiếm và sắp xếp kết quả
     const recipes = await RecipeModel.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)

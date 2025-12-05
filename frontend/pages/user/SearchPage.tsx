@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import TopNavBar from '../../components/TopNavBar';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { apiGetRecipes, RecipeListItem, RecipeFilters } from '../../api';
-import Chatbot from '../../components/Chatbot';
 
 const SearchPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [recipes, setRecipes] = useState<RecipeListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -13,22 +13,24 @@ const SearchPage: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   // Filter states
-  const [filters, setFilters] = useState<RecipeFilters>({
-    q: '',
+  const [filters, setFilters] = useState<RecipeFilters>(() => ({
+    q: searchParams.get('q') || '',
     category: '',
     difficulty: undefined,
-    region: '',
+    region: searchParams.get('region') || '',
     ingredient: '',
     timeMin: undefined,
     timeMax: undefined,
+    tag: searchParams.get('tag') || '',
     page: 1,
     limit: 24,
-  });
+  }));
 
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showDifficultyDropdown, setShowDifficultyDropdown] = useState(false);
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const [showRegionDropdown, setShowRegionDropdown] = useState(false);
+
 
   const loadRecipes = async () => {
     try {
@@ -47,11 +49,10 @@ const SearchPage: React.FC = () => {
 
   useEffect(() => {
     loadRecipes();
-  }, [page]);
+  }, [page, filters]);
 
   const handleSearch = () => {
     setPage(1);
-    loadRecipes();
   };
 
   const handleFilterChange = (key: keyof RecipeFilters, value: any) => {
@@ -68,13 +69,21 @@ const SearchPage: React.FC = () => {
       ingredient: '',
       timeMin: undefined,
       timeMax: undefined,
+      tag: '',
       page: 1,
       limit: 24,
     });
     setPage(1);
   };
 
-  const hasActiveFilters = filters.category || filters.difficulty || filters.region || filters.ingredient || filters.timeMin || filters.timeMax;
+  const hasActiveFilters =
+    filters.category ||
+    filters.difficulty ||
+    filters.region ||
+    filters.ingredient ||
+    filters.timeMin ||
+    filters.timeMax ||
+    filters.tag;
 
   const categories = ['Món chính', 'Khai vị', 'Tráng miệng', 'Đồ uống', 'Bánh kẹo', 'Món chay', 'Món nhanh'];
   const regions = ['Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên'];
@@ -99,8 +108,9 @@ const SearchPage: React.FC = () => {
     if (filters.timeMax) {
       return `Dưới ${filters.timeMax} phút`;
     }
-    return 'Thời gian nấu';
+    return 'Thời gian chế biến';
   };
+
 
   return (
     <>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import TopNavBar from '../../components/TopNavBar';
 import {
@@ -12,8 +12,14 @@ import {
   apiLikePost,
   apiUnlikePost,
   apiUploadImage,
+  apiGetRecipeTags,
+  apiGetMyRecipesForAttach,
+  apiRatePost,
+  apiViewPost,
   FeedPost,
   PostComment,
+  FeedSort,
+  UserRecipeSummary,
 } from '../../api';
 import { getStoredUser, isLoggedIn } from '../../auth';
 import { timeAgo } from '../../utils/timeAgo';
@@ -22,16 +28,23 @@ type FeedPostWithUI = FeedPost & {
   liked?: boolean;
   isLiking?: boolean;
   isCommenting?: boolean;
+  ratingCount?: number;
+  averageRating?: number;
+  viewsCount?: number;
 };
 
 const FeedPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedPostId = searchParams.get('postId');
   const postRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const navigate = useNavigate();
 
   const [posts, setPosts] = useState<FeedPostWithUI[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [sortBy, setSortBy] = useState<FeedSort>('latest');
   const [newPostContent, setNewPostContent] = useState('');
   const [posting, setPosting] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -46,9 +59,68 @@ const FeedPage: React.FC = () => {
   >({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   const [commentingPost, setCommentingPost] = useState<string | null>(null);
-
+  const [recipeTags, setRecipeTags] = useState<string[]>([]);
+  const [attachModalOpen, setAttachModalOpen] = useState(false);
+  const [myRecipes, setMyRecipes] = useState<UserRecipeSummary[]>([]);
+  const [loadingMyRecipes, setLoadingMyRecipes] = useState(false);
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
+  const viewedPostIdsRef = useRef<Set<string>>(new Set());
   const user = useMemo(() => getStoredUser(), []);
   const loggedIn = isLoggedIn();
+
+  const goToSearchWith = (params: Record<string, string>) => {
+    const sp = new URLSearchParams(params);
+    navigate(`/search?${sp.toString()}`);
+  };
+
+  // Load danh sách tag công thức để sidebar dùng đúng tag đang có
+  useEffect(() => {
+    let cancelled = false;
+    const loadTags = async () => {
+      try {
+        const data = await apiGetRecipeTags();
+        if (!cancelled && Array.isArray(data.tags)) {
+          setRecipeTags(
+            data.tags
+              .filter((t) => t && t.trim())
+              .map((t) => t.trim())
+          );
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadTags();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const hasTag = (label: string) =>
+    recipeTags.some((t) => t.toLowerCase() === label.toLowerCase());
+
+  const openAttachModal = async () => {
+    if (!loggedIn) {
+      alert('Bạn cần đăng nhập để gắn công thức.');
+      return;
+    }
+    setAttachModalOpen(true);
+    try {
+      setLoadingMyRecipes(true);
+      // Chỉ cho phép gắn công thức đã được duyệt
+      const data = await apiGetMyRecipesForAttach('published');
+      setMyRecipes(data);
+    } catch (err) {
+      console.error(err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : 'Không tải được danh sách công thức của bạn.'
+      );
+    } finally {
+      setLoadingMyRecipes(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -69,12 +141,15 @@ const FeedPage: React.FC = () => {
           }
         }
 
-        // Load feed bình thường
-        const feedData = await apiGetFeed();
+        // Load feed bình thường (có phân trang + sort)
+        const feedData = await apiGetFeed(page, sortBy);
 
         if (cancelled) return;
 
-        let finalPosts: FeedPostWithUI[] = feedData as FeedPostWithUI[];
+        setTotalPages(feedData.totalPages || 1);
+
+        let finalPosts: FeedPostWithUI[] = (feedData.posts ||
+          []) as FeedPostWithUI[];
 
         // Nếu có highlightedPost, đặt nó ở đầu và loại bỏ duplicate nếu có trong feed
         if (highlightedPost) {
@@ -115,7 +190,31 @@ const FeedPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [highlightedPostId]);
+  }, [highlightedPostId, page, sortBy]);
+
+  // Gửi lượt xem cho các bài viết trên feed (mỗi bài 1 lần mỗi phiên)
+  useEffect(() => {
+    if (!loggedIn) return;
+    const viewedSet = viewedPostIdsRef.current;
+    const toView = posts
+      .map((p) => p.id)
+      .filter((id) => id && !viewedSet.has(id));
+    if (toView.length === 0) return;
+
+    toView.forEach(async (postId) => {
+      try {
+        viewedSet.add(postId);
+        const res = await apiViewPost(postId);
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId ? { ...p, viewsCount: res.viewsCount } : p
+          )
+        );
+      } catch (err) {
+        console.error('Failed to record view for post', postId, err);
+      }
+    });
+  }, [posts, loggedIn]);
 
   const handleCreatePost = async () => {
     if (!loggedIn) {
@@ -128,7 +227,8 @@ const FeedPage: React.FC = () => {
       setPosting(true);
       const created = await apiCreatePost(
         newPostContent.trim(),
-        newPostImageUrl || undefined
+        newPostImageUrl || undefined,
+        selectedRecipeId || undefined
       );
       setPosts((prev) => [
         {
@@ -140,6 +240,7 @@ const FeedPage: React.FC = () => {
       ]);
       setNewPostContent('');
       setNewPostImageUrl(null);
+      setSelectedRecipeId(null);
     } catch (err) {
       console.error(err);
       alert(
@@ -363,9 +464,11 @@ const FeedPage: React.FC = () => {
   return (
     <>
       <TopNavBar />
-      <main className="w-full max-w-xl mx-auto px-4 py-8">
-        <div className="flex flex-col gap-6">
-          {/* Composer Card */}
+      <main className="w-full max-w-4xl mx-auto px-4 py-8">
+        <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1.2fr)]">
+          {/* Left column: Feed */}
+          <div className="flex flex-col gap-6">
+            {/* Composer Card */}
           <div className="flex flex-col gap-2 p-4 rounded-lg bg-white dark:bg-card-dark border border-border-light dark:border-border-dark">
             <div className="flex items-start gap-3">
               <div
@@ -411,13 +514,15 @@ const FeedPage: React.FC = () => {
                 />
                 <button
                   type="button"
-                  onClick={() => toast('Tính năng đang phát triển', { icon: '🚧' })}
+                  onClick={openAttachModal}
                   className="flex items-center justify-center gap-2 h-9 px-3 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-muted-light dark:text-text-muted-dark"
                 >
                   <span className="material-symbols-outlined text-sm">
                     link
                   </span>
-                  <span className="text-sm font-medium">Gắn công thức</span>
+                  <span className="text-sm font-medium">
+                    {selectedRecipeId ? 'Đã gắn công thức' : 'Gắn công thức'}
+                  </span>
                 </button>
               </div>
               <button
@@ -442,9 +547,41 @@ const FeedPage: React.FC = () => {
               </div>
             )}
           </div>
-          <p className="text-text-muted-light dark:text-text-muted-dark text-sm font-normal leading-normal text-center">
-            Bạn có thể chia sẻ món bạn vừa nấu, kèm hình ảnh.
-          </p>
+
+          {/* Sort buttons */}
+          <div className="flex items-center justify-end gap-2 text-sm">
+            <span className="text-text-muted-light dark:text-text-muted-dark">
+              Sắp xếp:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPage(1);
+                setSortBy('latest');
+              }}
+              className={`px-3 py-1 rounded-full border text-xs md:text-sm transition-colors ${
+                sortBy === 'latest'
+                  ? 'bg-primary/10 text-primary border-primary/40'
+                  : 'border-border-light dark:border-border-dark text-text-muted-light dark:text-text-muted-dark hover:bg-black/5 dark:hover:bg-white/10'
+              }`}
+            >
+              Mới nhất
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPage(1);
+                setSortBy('likes');
+              }}
+              className={`px-3 py-1 rounded-full border text-xs md:text-sm transition-colors ${
+                sortBy === 'likes'
+                  ? 'bg-primary/10 text-primary border-primary/40'
+                  : 'border-border-light dark:border-border-dark text-text-muted-light dark:text-text-muted-dark hover:bg-black/5 dark:hover:bg-white/10'
+              }`}
+            >
+              Nhiều like
+            </button>
+          </div>
 
           {loading && (
             <p className="text-center text-text-muted-light dark:text-text-muted-dark text-sm">
@@ -511,6 +648,40 @@ const FeedPage: React.FC = () => {
                   <p className="text-text-light dark:text-text-dark text-base font-normal leading-relaxed whitespace-pre-wrap">
                     {post.content}
                   </p>
+                  {post.relatedRecipe && (
+                    <div className="border border-primary/20 rounded-lg p-3 bg-primary/5 flex items-center gap-3">
+                      {post.relatedRecipe.image && (
+                        <div
+                          className="w-16 h-16 rounded-md bg-center bg-cover bg-no-repeat flex-shrink-0"
+                          style={{
+                            backgroundImage: `url("${post.relatedRecipe.image}")`,
+                          }}
+                        ></div>
+                      )}
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-text-light dark:text-text-dark">
+                          {post.relatedRecipe.title}
+                        </p>
+                        <p className="text-xs text-text-muted-light dark:text-text-muted-dark mt-0.5">
+                          {post.relatedRecipe.timeMinutes} phút ·{' '}
+                          {post.relatedRecipe.difficulty === 'easy'
+                            ? 'Dễ'
+                            : post.relatedRecipe.difficulty === 'medium'
+                            ? 'Trung bình'
+                            : 'Khó'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(`/recipe/${post.relatedRecipe!.slug}`)
+                        }
+                        className="text-xs px-3 py-1 rounded-full bg-primary text-white font-semibold hover:bg-primary/90"
+                      >
+                        Xem công thức
+                      </button>
+                    </div>
+                  )}
                   {post.imageUrls?.[0] && (
                     <div
                       className="w-full bg-center bg-no-repeat aspect-video bg-cover rounded-lg"
@@ -519,6 +690,64 @@ const FeedPage: React.FC = () => {
                       }}
                     ></div>
                   )}
+                  {/* Rating & views */}
+                  <div className="flex items-center justify-between text-xs text-text-muted-light dark:text-text-muted-dark px-1">
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={async () => {
+                            if (!loggedIn) {
+                              alert('Bạn cần đăng nhập để đánh giá bài viết.');
+                              return;
+                            }
+                            try {
+                              const res = await apiRatePost(post.id, star);
+                              setPosts((prev) =>
+                                prev.map((p) =>
+                                  p.id === post.id
+                                    ? {
+                                        ...p,
+                                        ratingCount: res.ratingCount,
+                                        averageRating: res.averageRating,
+                                      }
+                                    : p
+                                )
+                              );
+                            } catch (err) {
+                              console.error(err);
+                              alert(
+                                err instanceof Error
+                                  ? err.message
+                                  : 'Không thể đánh giá bài viết, thử lại sau.'
+                              );
+                            }
+                          }}
+                          className="flex items-center justify-center"
+                        >
+                          <span
+                            className="material-symbols-outlined text-base"
+                            style={{
+                              color:
+                                (post.averageRating || 0) >= star
+                                  ? '#facc15'
+                                  : '#9ca3af',
+                              fontVariationSettings:
+                                '"FILL" 1, "wght" 400, "GRAD" 0, "opsz" 20',
+                            }}
+                          >
+                            star
+                          </span>
+                        </button>
+                      ))}
+                      <span className="ml-1">
+                        {post.averageRating ? post.averageRating.toFixed(1) : '0.0'}{' '}
+                        ({post.ratingCount || 0} đánh giá)
+                      </span>
+                    </div>
+                    <span>{post.viewsCount || 0} lượt xem</span>
+                  </div>
                 </div>
 
                 <div className="border-t border-border-light dark:border-border-dark pt-2 flex flex-col gap-2">
@@ -533,7 +762,18 @@ const FeedPage: React.FC = () => {
                       disabled={post.isLiking}
                       className="flex flex-1 items-center justify-center gap-2 h-9 px-3 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-text-muted-light dark:text-text-muted-dark disabled:opacity-60"
                     >
-                      <span className="material-symbols-outlined text-base">
+                      <span
+                        className="material-symbols-outlined text-base"
+                        style={
+                          post.liked
+                            ? {
+                                color: '#ef4444', // red-500
+                                fontVariationSettings:
+                                  '"FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24',
+                              }
+                            : undefined
+                        }
+                      >
                         {post.liked ? 'favorite' : 'favorite_border'}
                       </span>
                       <span className="text-sm font-medium">
@@ -638,6 +878,254 @@ const FeedPage: React.FC = () => {
               </div>
             );
           })}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 mt-4">
+              <button
+                type="button"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1 rounded-lg text-sm border border-border-light dark:border-border-dark disabled:opacity-50 disabled:cursor-not-allowed hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                Trang trước
+              </button>
+              <span className="text-sm text-text-muted-light dark:text-text-muted-dark">
+                Trang {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1 rounded-lg text-sm border border-border-light dark:border-border-dark disabled:opacity-50 disabled:cursor-not-allowed hover:bg-black/5 dark:hover:bg-white/10"
+              >
+                Trang sau
+              </button>
+            </div>
+          )}
+          </div>
+
+          {/* Attach Recipe Modal */}
+          {attachModalOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+              onClick={() => setAttachModalOpen(false)}
+            >
+              <div
+                className="w-full max-w-2xl bg-white dark:bg-card-dark rounded-xl shadow-2xl border border-border-light dark:border-border-dark max-h-[90vh] overflow-hidden flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border-light dark:border-border-dark">
+                  <h2 className="text-base font-semibold text-text-light dark:text-text-dark">
+                    Gắn công thức vào bài viết
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setAttachModalOpen(false)}
+                    className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-text-muted-light dark:text-text-muted-dark"
+                  >
+                    <span className="material-symbols-outlined text-base">
+                      close
+                    </span>
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                  {/* Danh sách công thức của bạn */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-semibold text-text-light dark:text-text-dark">
+                        Công thức của bạn
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            setLoadingMyRecipes(true);
+                            const data = await apiGetMyRecipesForAttach();
+                            setMyRecipes(data);
+                          } catch (err) {
+                            console.error(err);
+                            alert(
+                              err instanceof Error
+                                ? err.message
+                                : 'Không tải được danh sách công thức của bạn.'
+                            );
+                          } finally {
+                            setLoadingMyRecipes(false);
+                          }
+                        }}
+                        className="text-xs px-2 py-1 rounded-full border border-border-light dark:border-border-dark text-text-muted-light dark:text-text-muted-dark hover:bg-black/5 dark:hover:bg-white/10"
+                      >
+                        Tải lại
+                      </button>
+                    </div>
+                    {loadingMyRecipes ? (
+                      <p className="text-xs text-text-muted-light dark:text-text-muted-dark">
+                        Đang tải công thức...
+                      </p>
+                    ) : myRecipes.length === 0 ? (
+                      <p className="text-xs text-text-muted-light dark:text-text-muted-dark">
+                        Bạn chưa có công thức đã được duyệt. Hãy vào trang Công thức để tạo và chờ admin duyệt trước khi gắn vào bài viết.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-56 overflow-y-auto">
+                        {myRecipes.map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => setSelectedRecipeId(r.id)}
+                            className={`w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm ${
+                              selectedRecipeId === r.id
+                                ? 'border-primary bg-primary/5'
+                                : 'border-border-light dark:border-border-dark hover:bg-black/5 dark:hover:bg-white/5'
+                            }`}
+                          >
+                            {r.image && (
+                              <div
+                                className="w-12 h-12 rounded-md bg-center bg-cover bg-no-repeat flex-shrink-0"
+                                style={{
+                                  backgroundImage: `url("${r.image}")`,
+                                }}
+                              ></div>
+                            )}
+                            <div className="flex-1">
+                              <p className="font-semibold text-text-light dark:text-text-dark line-clamp-1">
+                                {r.title}
+                              </p>
+                              <p className="text-[11px] text-text-muted-light dark:text-text-muted-dark mt-0.5">
+                                {r.timeMinutes} phút ·{' '}
+                                {r.difficulty === 'easy'
+                                  ? 'Dễ'
+                                  : r.difficulty === 'medium'
+                                  ? 'Trung bình'
+                                  : 'Khó'}{' '}
+                                ·{' '}
+                                {r.status === 'published'
+                                  ? 'Đã duyệt'
+                                  : r.status === 'pending_review'
+                                  ? 'Chờ duyệt'
+                                  : r.status === 'rejected'
+                                  ? 'Bị từ chối'
+                                  : 'Nháp'}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border-light dark:border-border-dark bg-background-light dark:bg-background-dark">
+                  <span className="text-xs text-text-muted-light dark:text-text-muted-dark">
+                    {selectedRecipeId
+                      ? 'Một công thức đã được chọn. Khi đăng bài sẽ gắn theo.'
+                      : 'Chưa chọn công thức nào.'}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRecipeId(null);
+                        setAttachModalOpen(false);
+                      }}
+                      className="px-3 py-1 rounded-lg border border-border-light dark:border-border-dark text-sm text-text-light dark:text-text-dark hover:bg-black/5 dark:hover:bg-white/10"
+                    >
+                      Bỏ gắn
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttachModalOpen(false)}
+                      className="px-3 py-1 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+                    >
+                      Xong
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Right column: Sidebar topics */}
+          <aside className="mt-4 lg:mt-0 lg:pl-4 flex flex-col gap-4">
+            <div className="rounded-xl bg-white dark:bg-card-dark border border-border-light dark:border-border-dark p-4">
+              <h3 className="text-sm font-semibold text-text-light dark:text-text-dark mb-3">
+                Chủ đề gợi ý
+              </h3>
+
+              {/* Vùng miền */}
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-text-muted-light dark:text-text-muted-dark mb-2">
+                  Theo vùng miền
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {['Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên']
+                    .filter((region) => hasTag(region))
+                    .map((region) => (
+                      <button
+                        key={region}
+                        type="button"
+                        onClick={() => goToSearchWith({ region })}
+                        className="px-3 py-1 rounded-full bg-background-light dark:bg-white/5 text-xs text-text-light dark:text-text-dark hover:bg-primary/10 hover:text-primary transition-colors"
+                      >
+                        {region}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* Bữa ăn */}
+              <div className="mb-3">
+                <p className="text-xs font-semibold text-text-muted-light dark:text-text-muted-dark mb-2">
+                  Theo bữa ăn
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {['Ăn sáng', 'Ăn trưa', 'Ăn tối', 'Ăn xế', 'Healthy']
+                    .filter((tag) => hasTag(tag))
+                    .map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => goToSearchWith({ tag })}
+                        className="px-3 py-1 rounded-full bg-background-light dark:bg-white/5 text-xs text-text-light dark:text-text-dark hover:bg-primary/10 hover:text-primary transition-colors"
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* Loại món */}
+              <div>
+                <p className="text-xs font-semibold text-text-muted-light dark:text-text-muted-dark mb-2">
+                  Theo loại món
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    'Món bún',
+                    'Món phở',
+                    'Món cơm',
+                    'Món lẩu',
+                    'Món nhậu',
+                    'Món chay',
+                    'Tráng miệng',
+                  ]
+                    .filter((tag) => hasTag(tag))
+                    .map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => goToSearchWith({ tag })}
+                        className="px-3 py-1 rounded-full bg-background-light dark:bg-white/5 text-xs text-text-light dark:text-text-dark hover:bg-primary/10 hover:text-primary transition-colors"
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </aside>
         </div>
       </main>
     </>

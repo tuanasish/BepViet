@@ -67,6 +67,9 @@ export interface PostDoc {
   relatedRecipeId?: ObjectId;
   likesCount: number;
   commentsCount: number;
+  ratingCount: number;
+  ratingSum: number;
+  viewsCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
