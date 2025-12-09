@@ -14,6 +14,9 @@ const UserRecipeCreatePage: React.FC = () => {
   const [uploadingStepImage, setUploadingStepImage] = useState<number | null>(
     null
   );
+  const [stepImageUrlInputs, setStepImageUrlInputs] = useState<Record<number, string>>(
+    {}
+  );
   const [region, setRegion] = useState<string>('');
   const imageInputRef = useRef<HTMLInputElement>(null);
   const stepImageInputRefs = useRef<Record<number, HTMLInputElement | null>>(
@@ -119,7 +122,7 @@ const UserRecipeCreatePage: React.FC = () => {
       order: newSteps.length + 1,
       title: '',
       content: '',
-      imageUrl: '',
+      images: [],
     });
     setFormData({ ...formData, steps: newSteps });
   };
@@ -177,17 +180,24 @@ const UserRecipeCreatePage: React.FC = () => {
     index: number,
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArr = Array.from(files);
+    if (fileArr.some((f) => !f.type.startsWith('image/'))) {
       toast.error('Vui lòng chọn file ảnh');
       return;
     }
     try {
       setUploadingStepImage(index);
-      const url = await apiUploadImage(file);
+      const uploadedUrls: string[] = [];
+      for (const file of fileArr) {
+        const url = await apiUploadImage(file);
+        uploadedUrls.push(url);
+      }
       const newSteps = [...(formData.steps || [])];
-      newSteps[index] = { ...newSteps[index], imageUrl: url };
+      const images = [...(newSteps[index].images || [])];
+      images.push(...uploadedUrls);
+      newSteps[index] = { ...newSteps[index], images };
       setFormData({ ...formData, steps: newSteps });
       toast.success('Đã upload ảnh bước thành công');
     } catch (err) {
@@ -202,6 +212,29 @@ const UserRecipeCreatePage: React.FC = () => {
         inputRef.value = '';
       }
     }
+  };
+
+  const handleAddStepImageUrl = (index: number) => {
+    const url = (stepImageUrlInputs[index] || '').trim();
+    if (!url) {
+      toast.error('Vui lòng nhập URL ảnh');
+      return;
+    }
+    const newSteps = [...(formData.steps || [])];
+    const images = [...(newSteps[index].images || [])];
+    images.push(url);
+    newSteps[index] = { ...newSteps[index], images };
+    setFormData({ ...formData, steps: newSteps });
+    setStepImageUrlInputs((prev) => ({ ...prev, [index]: '' }));
+    toast.success('Đã thêm URL ảnh bước');
+  };
+
+  const handleRemoveStepImage = (stepIndex: number, imageIndex: number) => {
+    const newSteps = [...(formData.steps || [])];
+    const images = [...(newSteps[stepIndex].images || [])];
+    images.splice(imageIndex, 1);
+    newSteps[stepIndex] = { ...newSteps[stepIndex], images };
+    setFormData({ ...formData, steps: newSteps });
   };
 
   const handleRemoveImage = (index: number) => {
@@ -550,6 +583,7 @@ const UserRecipeCreatePage: React.FC = () => {
                       onChange={(e) => handleUploadStepImage(index, e)}
                       disabled={uploadingStepImage === index}
                       className="hidden"
+                      multiple
                     />
                     <button
                       type="button"
@@ -563,23 +597,51 @@ const UserRecipeCreatePage: React.FC = () => {
                         ? 'Đang upload...'
                         : '+ Upload ảnh bước'}
                     </button>
-                    <input
-                      type="text"
-                      placeholder="Hoặc nhập URL ảnh (tùy chọn)"
-                      value={step.imageUrl || ''}
-                      onChange={(e) =>
-                        handleStepChange(index, 'imageUrl', e.target.value)
-                      }
-                      className="flex-1 px-4 py-2 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-card-dark text-text-light dark:text-text-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
-                    />
+                    <div className="flex flex-1 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Nhập URL ảnh (tùy chọn)"
+                        value={stepImageUrlInputs[index] || ''}
+                        onChange={(e) =>
+                          setStepImageUrlInputs((prev) => ({
+                            ...prev,
+                            [index]: e.target.value,
+                          }))
+                        }
+                        className="flex-1 px-4 py-2 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-card-dark text-text-light dark:text-text-dark focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddStepImageUrl(index)}
+                        className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 whitespace-nowrap"
+                        disabled={uploadingStepImage === index}
+                      >
+                        Thêm URL
+                      </button>
+                    </div>
                   </div>
 
-                  {step.imageUrl && (
-                    <img
-                      src={step.imageUrl}
-                      alt={`Step ${step.order}`}
-                      className="w-full max-w-md h-40 object-cover rounded-lg border border-border-light dark:border-border-dark"
-                    />
+                  {step.images && step.images.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {step.images.map((img, imgIdx) => (
+                        <div key={imgIdx} className="relative group">
+                          <img
+                            src={img}
+                            alt={`Step ${step.order} image ${imgIdx + 1}`}
+                            className="w-full h-32 object-cover rounded-lg border border-border-light dark:border-border-dark"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStepImage(index, imgIdx)}
+                            className="absolute top-1 right-1 p-1 rounded-full bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-sm">
+                              close
+                            </span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               ))}

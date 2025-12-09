@@ -1060,13 +1060,13 @@ const FeedPage: React.FC = () => {
                   Theo vùng miền
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {['Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên']
-                    .filter((region) => hasTag(region))
+                  {['Mọi miền', 'Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên']
+                    .filter((region) => region === 'Mọi miền' || hasTag(region))
                     .map((region) => (
                       <button
                         key={region}
                         type="button"
-                        onClick={() => goToSearchWith({ region })}
+                        onClick={() => goToSearchWith({ region: region === 'Mọi miền' ? '' : region })}
                         className="px-3 py-1 rounded-full bg-background-light dark:bg-white/5 text-xs text-text-light dark:text-text-dark hover:bg-primary/10 hover:text-primary transition-colors"
                       >
                         {region}

@@ -2,8 +2,9 @@
   "name": "bepviet-backend",
   "version": "1.0.0",
   "private": true,
+  "type": "commonjs",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
+    "dev": "node --require ts-node/register/transpile-only src/server.ts",
     "start": "node dist/server.js",
     "build": "tsc -p tsconfig.json"
   },
@@ -28,6 +29,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/multer": "^2.0.0",
     "@types/node": "^22.14.0",
+    "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.8.2"
   }

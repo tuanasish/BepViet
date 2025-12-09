@@ -228,6 +228,7 @@ router.get('/users', async (req, res) => {
       avatarUrl: u.avatarUrl || null,
       role: u.role,
       status: u.status,
+      canPost: u.canPost !== false, // default true nếu không có
       createdAt: u.createdAt,
     }));
 
@@ -315,6 +316,78 @@ router.post('/users/:id/unlock', async (req: AuthenticatedRequest, res) => {
     return res
       .status(500)
       .json({ message: 'Lỗi server khi mở khóa tài khoản.' });
+  }
+});
+
+// POST /api/admin/users/:id/ban-posting - cấm đăng bài
+router.post('/users/:id/ban-posting', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'ID người dùng không hợp lệ.' });
+    }
+
+    const user = await UserModel.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+    }
+
+    if (user.role === 'admin') {
+      return res
+        .status(400)
+        .json({ message: 'Không thể cấm đăng bài tài khoản admin.' });
+    }
+
+    user.canPost = false;
+    await user.save();
+
+    return res.json({
+      message: 'Đã cấm đăng bài thành công.',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        canPost: user.canPost,
+      },
+    });
+  } catch (err) {
+    console.error('Error in POST /api/admin/users/:id/ban-posting', err);
+    return res.status(500).json({ message: 'Lỗi server khi cấm đăng bài.' });
+  }
+});
+
+// POST /api/admin/users/:id/unban-posting - hủy cấm đăng bài
+router.post('/users/:id/unban-posting', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'ID người dùng không hợp lệ.' });
+    }
+
+    const user = await UserModel.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+    }
+
+    user.canPost = true;
+    await user.save();
+
+    return res.json({
+      message: 'Đã hủy cấm đăng bài thành công.',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        canPost: user.canPost,
+      },
+    });
+  } catch (err) {
+    console.error('Error in POST /api/admin/users/:id/unban-posting', err);
+    return res
+      .status(500)
+      .json({ message: 'Lỗi server khi hủy cấm đăng bài.' });
   }
 });
 
@@ -472,6 +545,64 @@ router.get('/posts', async (req, res) => {
     return res
       .status(500)
       .json({ message: 'Lỗi server khi lấy danh sách bài đăng.' });
+  }
+});
+
+// DELETE /api/admin/posts/by-date - xóa tất cả bài đăng trong một ngày (admin)
+router.delete('/posts/by-date', async (req: AuthenticatedRequest, res) => {
+  try {
+    const { date } = req.query as { date?: string };
+
+    if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return res.status(400).json({ message: 'Ngày không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD.' });
+    }
+
+    // Tạo start và end của ngày
+    const startDate = new Date(date + 'T00:00:00.000Z');
+    const endDate = new Date(date + 'T23:59:59.999Z');
+
+    // Tìm tất cả bài đăng trong ngày
+    const posts = await PostModel.find({
+      createdAt: {
+        $gte: startDate,
+        $lte: endDate,
+      },
+    }).select('_id').lean();
+
+    const postIds = posts.map((p) => p._id.toString());
+
+    if (postIds.length === 0) {
+      return res.json({
+        message: 'Không có bài đăng nào trong ngày này.',
+        deletedCount: 0,
+      });
+    }
+
+    // Xóa tất cả comments và likes liên quan
+    await CommentModel.deleteMany({
+      targetType: 'post',
+      targetId: { $in: postIds },
+    });
+
+    await LikeModel.deleteMany({
+      targetType: 'post',
+      targetId: { $in: postIds },
+    });
+
+    // Xóa tất cả bài đăng
+    const deleteResult = await PostModel.deleteMany({
+      _id: { $in: postIds },
+    });
+
+    return res.json({
+      message: `Đã xóa ${deleteResult.deletedCount} bài đăng thành công.`,
+      deletedCount: deleteResult.deletedCount,
+    });
+  } catch (err) {
+    console.error('Error in DELETE /api/admin/posts/by-date', err);
+    return res
+      .status(500)
+      .json({ message: 'Lỗi server khi xóa bài đăng theo ngày.' });
   }
 });
 

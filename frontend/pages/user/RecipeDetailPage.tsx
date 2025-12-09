@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import TopNavBar from '../../components/TopNavBar';
 import { Link, useParams } from 'react-router-dom';
-import { apiGetRecipeDetail, apiGetAdminRecipeDetail, apiSaveRecipe, RecipeDetail } from '../../api';
+import { apiGetRecipeDetail, apiGetAdminRecipeDetail, apiSaveRecipe, apiRateRecipe, RecipeDetail } from '../../api';
 import toast from 'react-hot-toast';
 import { isLoggedIn, isAdmin } from '../../auth';
 
@@ -10,6 +10,8 @@ const RecipeDetailPage: React.FC = () => {
   const [recipe, setRecipe] = useState<RecipeDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userRating, setUserRating] = useState<number | null>(null);
+  const [ratingLoading, setRatingLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -87,11 +89,75 @@ const RecipeDetailPage: React.FC = () => {
               <div class="grid grid-cols-1 lg:grid-cols-3 lg:gap-12 mt-8">
                 {/* Left Column: Details & Steps */}
                 <div class="lg:col-span-2">
-                  {/* PageHeading */}
+                  {/* PageHeading + Rating */}
                   <div class="flex flex-wrap justify-between gap-3 p-4">
-                    <h1 class="text-text-light dark:text-text-dark text-4xl font-black leading-tight tracking-[-0.033em] min-w-72">
-                      {recipe.title}
-                    </h1>
+                    <div class="flex flex-col gap-2">
+                      <h1 class="text-text-light dark:text-text-dark text-4xl font-black leading-tight tracking-[-0.033em] min-w-72">
+                        {recipe.title}
+                      </h1>
+                      {/* Rating Summary */}
+                      {recipe.averageRating !== undefined && recipe.ratingCount !== undefined && (
+                        <div class="flex items-center gap-2">
+                          <div class="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <span
+                                key={star}
+                                class={`material-symbols-outlined text-xl ${
+                                  star <= Math.round(recipe.averageRating || 0)
+                                    ? 'text-yellow-400'
+                                    : 'text-gray-300 dark:text-gray-600'
+                                }`}
+                              >
+                                star
+                              </span>
+                            ))}
+                          </div>
+                          <span class="text-text-muted-light dark:text-text-muted-dark text-sm">
+                            {recipe.averageRating.toFixed(1)} ({recipe.ratingCount} đánh giá)
+                          </span>
+                        </div>
+                      )}
+                      {/* User Rating */}
+                      {isLoggedIn() && (
+                        <div class="flex items-center gap-2">
+                          <span class="text-text-light dark:text-text-dark text-sm">Đánh giá của bạn:</span>
+                          <div class="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                type="button"
+                                onClick={async () => {
+                                  if (ratingLoading) return;
+                                  if (!isLoggedIn()) {
+                                    toast.error('Bạn cần đăng nhập để đánh giá');
+                                    return;
+                                  }
+                                  try {
+                                    setRatingLoading(true);
+                                    const result = await apiRateRecipe(recipe.id, star);
+                                    setRecipe({ ...recipe, ratingCount: result.ratingCount, averageRating: result.averageRating });
+                                    setUserRating(star);
+                                    toast.success('Đã đánh giá công thức');
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Không thể đánh giá công thức');
+                                  } finally {
+                                    setRatingLoading(false);
+                                  }
+                                }}
+                                disabled={ratingLoading}
+                                class={`material-symbols-outlined text-xl cursor-pointer transition-colors ${
+                                  star <= (userRating || 0)
+                                    ? 'text-yellow-400 hover:text-yellow-500'
+                                    : 'text-gray-300 dark:text-gray-600 hover:text-yellow-300'
+                                } ${ratingLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                star
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {/* ProfileHeader */}
                   <div class="flex p-4 @container border-b border-border-light dark:border-border-dark pb-6">
@@ -110,7 +176,7 @@ const RecipeDetailPage: React.FC = () => {
                     </div>
                   </div>
                   {/* Info Badges */}
-                  <div class="flex flex-wrap gap-4 p-4 mt-4">
+                  <div class="flex flex-wrap gap-4 px-4 mt-2">
                     <div class="flex items-center gap-2 rounded-lg bg-primary/10 dark:bg-primary/20 px-3 py-2 text-sm font-medium text-primary dark:text-primary">
                       <span class="material-symbols-outlined !text-base">timer</span>
                       <span>Thời gian: {recipe.timeMinutes} phút</span>
@@ -130,6 +196,74 @@ const RecipeDetailPage: React.FC = () => {
                       <span>{recipe.category}</span>
                     </div>
                   </div>
+                  {/* Rating Section */}
+                  <div class="p-4 mt-4 border-b border-border-light dark:border-border-dark pb-6">
+                    <div class="flex flex-col gap-3">
+                      <div class="flex items-center gap-3">
+                        <span class="text-text-light dark:text-text-dark text-base font-bold">Đánh giá:</span>
+                        {recipe.averageRating !== undefined && recipe.ratingCount !== undefined && (
+                          <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-1">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <span
+                                  key={star}
+                                  class={`material-symbols-outlined text-xl ${
+                                    star <= Math.round(recipe.averageRating || 0)
+                                      ? 'text-yellow-400'
+                                      : 'text-gray-300 dark:text-gray-600'
+                                  }`}
+                                >
+                                  star
+                                </span>
+                              ))}
+                            </div>
+                            <span class="text-text-muted-light dark:text-text-muted-dark text-sm">
+                              {recipe.averageRating.toFixed(1)} ({recipe.ratingCount} đánh giá)
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      {isLoggedIn() && (
+                        <div class="flex items-center gap-2">
+                          <span class="text-text-light dark:text-text-dark text-sm">Đánh giá của bạn:</span>
+                          <div class="flex items-center gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                type="button"
+                                onClick={async () => {
+                                  if (ratingLoading) return;
+                                  if (!isLoggedIn()) {
+                                    toast.error('Bạn cần đăng nhập để đánh giá');
+                                    return;
+                                  }
+                                  try {
+                                    setRatingLoading(true);
+                                    const result = await apiRateRecipe(recipe.id, star);
+                                    setRecipe({ ...recipe, ratingCount: result.ratingCount, averageRating: result.averageRating });
+                                    setUserRating(star);
+                                    toast.success('Đã đánh giá công thức');
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Không thể đánh giá công thức');
+                                  } finally {
+                                    setRatingLoading(false);
+                                  }
+                                }}
+                                disabled={ratingLoading}
+                                class={`material-symbols-outlined text-xl cursor-pointer transition-colors ${
+                                  star <= (userRating || 0)
+                                    ? 'text-yellow-400 hover:text-yellow-500'
+                                    : 'text-gray-300 dark:text-gray-600 hover:text-yellow-300'
+                                } ${ratingLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                star
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                   {/* Description */}
                   {recipe.description && (
                     <div class="p-4 mt-2">
@@ -143,13 +277,47 @@ const RecipeDetailPage: React.FC = () => {
                     <h2 class="text-2xl font-bold text-text-light dark:text-text-dark mb-6">Các bước thực hiện</h2>
                     <ol class="space-y-8">
                       {recipe.steps.map((step) => (
-                        <li key={step.order} class="flex gap-4">
-                          <div class="flex-shrink-0 flex items-center justify-center size-8 rounded-full bg-primary text-white font-bold">
-                            {step.order}
+                        <li key={step.order} class="flex flex-col gap-4">
+                          <div class="flex gap-4">
+                            <div class="flex-shrink-0 flex items-center justify-center size-8 rounded-full bg-primary text-white font-bold">
+                              {step.order}
+                            </div>
+                            <div class="flex-1">
+                              {step.title && (
+                                <h3 class="text-lg font-bold text-text-light dark:text-text-dark mb-2">
+                                  {step.title}
+                                </h3>
+                              )}
+                              <p class="text-base text-[#333] dark:text-gray-300 leading-relaxed">
+                                {step.content}
+                              </p>
+                            </div>
                           </div>
-                          <p class="text-base text-[#333] dark:text-gray-300 leading-relaxed">
-                            {step.content}
-                          </p>
+                          {/* Step Images */}
+                          {(step.images && step.images.length > 0) || step.imageUrl ? (
+                            <div class="flex flex-wrap gap-4 ml-12">
+                              {/* Hiển thị images mảng (ưu tiên) */}
+                              {step.images && step.images.length > 0 ? (
+                                step.images.map((img, idx) => (
+                                  <img
+                                    key={idx}
+                                    src={img}
+                                    alt={`Bước ${step.order} - Hình ${idx + 1}`}
+                                    class="rounded-lg object-cover max-w-full h-auto max-h-96"
+                                  />
+                                ))
+                              ) : (
+                                /* Fallback cho imageUrl cũ nếu có */
+                                step.imageUrl && (
+                                  <img
+                                    src={step.imageUrl}
+                                    alt={`Bước ${step.order}`}
+                                    class="rounded-lg object-cover max-w-full h-auto max-h-96"
+                                  />
+                                )
+                              )}
+                            </div>
+                          ) : null}
                         </li>
                       ))}
                     </ol>
@@ -161,11 +329,11 @@ const RecipeDetailPage: React.FC = () => {
                     <h3 class="text-xl font-bold text-text-light dark:text-text-dark mb-5">Nguyên liệu</h3>
                     <ul class="space-y-3 text-[#333] dark:text-gray-300 text-base">
                       {recipe.ingredients.map((ing, idx) => (
-                        <li key={idx} class="flex items-center gap-3">
-                          <input class="form-checkbox rounded text-primary focus:ring-primary" id={`ingredient-${idx}`} type="checkbox" />
-                          <label htmlFor={`ingredient-${idx}`}>
+                        <li key={idx} class="flex items-start gap-3">
+                          <span class="mt-1 inline-flex size-3 rounded-full bg-primary/80"></span>
+                          <span>
                             {ing.amount ? `${ing.amount} ` : ''}{ing.name}{ing.note ? ` (${ing.note})` : ''}
-                          </label>
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -189,10 +357,6 @@ const RecipeDetailPage: React.FC = () => {
                         <span class="material-symbols-outlined !text-xl">bookmark_add</span>
                         <span class="truncate">Lưu vào bộ sưu tập</span>
                       </button>
-                      <Link class="flex w-full min-w-[84px] cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg h-12 px-4 bg-gray-100 dark:bg-white/10 text-text-light dark:text-text-dark text-base font-bold leading-normal tracking-[0.015em] hover:bg-gray-200 dark:hover:bg-white/20 transition-colors" to="/collection">
-                        <span class="material-symbols-outlined !text-xl">arrow_back</span>
-                        <span class="truncate">Quay lại</span>
-                      </Link>
                     </div>
                   </div>
                 </div>

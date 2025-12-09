@@ -122,8 +122,13 @@ const TopNavBar: React.FC = () => {
                     navigate('/login');
                   }
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer flex items-center gap-2"
               >
+                {isLoggedIn() && currentUser?.name && (
+                  <span className="hidden sm:block text-sm font-medium text-text-light dark:text-text-dark">
+                    {currentUser.name}
+                  </span>
+                )}
                 <div
                   className="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 hover:ring-2 hover:ring-primary/50 transition-all"
                   style={{ backgroundImage: `url("${avatarUrl}")` }}

@@ -5,6 +5,8 @@ import {
   apiGetAdminUsers,
   apiLockUser,
   apiUnlockUser,
+  apiBanUserPosting,
+  apiUnbanUserPosting,
   AdminUser,
 } from '../../api';
 import toast from 'react-hot-toast';
@@ -81,6 +83,38 @@ const AdminUserPage: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       toast.error(err.message || 'Không thể mở khóa tài khoản');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleBanPosting = async (userId: string, userName: string) => {
+    if (!window.confirm(`Bạn có chắc muốn cấm ${userName} đăng bài?`)) return;
+
+    try {
+      setProcessingId(userId);
+      await apiBanUserPosting(userId);
+      toast.success('Đã cấm đăng bài thành công');
+      await loadUsers();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Không thể cấm đăng bài');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleUnbanPosting = async (userId: string, userName: string) => {
+    if (!window.confirm(`Bạn có chắc muốn hủy cấm đăng bài cho ${userName}?`)) return;
+
+    try {
+      setProcessingId(userId);
+      await apiUnbanUserPosting(userId);
+      toast.success('Đã hủy cấm đăng bài thành công');
+      await loadUsers();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Không thể hủy cấm đăng bài');
     } finally {
       setProcessingId(null);
     }
@@ -257,6 +291,7 @@ const AdminUserPage: React.FC = () => {
                               {new Date(user.createdAt).toLocaleDateString('vi-VN')}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex flex-col gap-1">
                               <span
                                 className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                   user.status === 'active'
@@ -266,6 +301,12 @@ const AdminUserPage: React.FC = () => {
                               >
                                 {user.status === 'active' ? 'Hoạt động' : 'Bị khóa'}
                               </span>
+                                {user.canPost === false && (
+                                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-300">
+                                    Bị cấm đăng bài
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                               <div className="flex items-center gap-2">
@@ -286,6 +327,25 @@ const AdminUserPage: React.FC = () => {
                                     title="Khóa tài khoản"
                                   >
                                     <span className="material-symbols-outlined">lock</span>
+                                  </button>
+                                )}
+                                {user.canPost === false ? (
+                                  <button
+                                    onClick={() => handleUnbanPosting(user.id, user.name)}
+                                    disabled={processingId === user.id || user.role === 'admin'}
+                                    className="text-text-muted-light hover:text-green-600 dark:text-text-muted-dark dark:hover:text-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Hủy cấm đăng bài"
+                                  >
+                                    <span className="material-symbols-outlined">edit_note</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleBanPosting(user.id, user.name)}
+                                    disabled={processingId === user.id || user.role === 'admin'}
+                                    className="text-text-muted-light hover:text-orange-600 dark:text-text-muted-dark dark:hover:text-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Cấm đăng bài"
+                                  >
+                                    <span className="material-symbols-outlined">block</span>
                                   </button>
                                 )}
                               </div>

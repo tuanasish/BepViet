@@ -262,6 +262,16 @@ router.post(
   async (req: AuthenticatedRequest, res) => {
     try {
       const userId = req.user!.userId;
+      
+      // Kiểm tra quyền đăng bài
+      const user = await UserModel.findById(userId).lean();
+      if (!user) {
+        return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+      }
+      if (user.canPost === false) {
+        return res.status(403).json({ message: 'Bạn đã bị cấm đăng bài. Vui lòng liên hệ quản trị viên.' });
+      }
+
       const {
         title,
         description,

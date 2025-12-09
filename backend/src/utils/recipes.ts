@@ -15,18 +15,40 @@ export function generateRecipeSlug(title: string): string {
 
 // Chuẩn hóa và sắp xếp steps cho công thức
 export function normalizeRecipeSteps(
-  steps: Array<{ order?: number; title?: string; content: string; imageUrl?: string }>
+  steps: Array<{
+    order?: number;
+    title?: string;
+    content: string;
+    imageUrl?: string;
+    images?: string[];
+  }>
 ): RecipeStep[] {
   return steps
     .filter((step) => step && step.content && step.content.trim())
-    .map((step, index) => ({
-      order: step.order !== undefined ? step.order : index + 1,
-      title: step.title?.trim() || undefined,
-      content: step.content.trim(),
-      imageUrl: step.imageUrl?.trim() || undefined,
-    }))
+    .map((step, index) => {
+      const imagesArr =
+        (Array.isArray(step.images)
+          ? step.images.filter((img) => img && img.trim())
+          : []) as string[];
+
+      // Nếu có imageUrl cũ thì ghép vào mảng images
+      if (step.imageUrl && step.imageUrl.trim()) {
+        imagesArr.unshift(step.imageUrl.trim());
+      }
+
+      return {
+        order: step.order !== undefined ? step.order : index + 1,
+        title: step.title?.trim() || undefined,
+        content: step.content.trim(),
+        imageUrl: step.imageUrl?.trim() || undefined,
+        images: imagesArr,
+      };
+    })
     .sort((a, b) => a.order - b.order);
 }
+
+
+
 
 
 

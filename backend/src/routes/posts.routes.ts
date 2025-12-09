@@ -4,6 +4,7 @@ import { PostModel } from '../models/post.model';
 import { RecipeModel } from '../models/recipe.model';
 import { LikeModel } from '../models/like.model';
 import { CommentModel } from '../models/comment.model';
+import { UserModel } from '../models/user.model';
 import {
   authMiddleware,
   AuthenticatedRequest,
@@ -149,6 +150,15 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
       imageUrls?: string[];
       relatedRecipeId?: string;
     };
+
+    // Kiểm tra quyền đăng bài
+    const user = await UserModel.findById(userId).lean();
+    if (!user) {
+      return res.status(404).json({ message: 'Không tìm thấy người dùng.' });
+    }
+    if (user.canPost === false) {
+      return res.status(403).json({ message: 'Bạn đã bị cấm đăng bài. Vui lòng liên hệ quản trị viên.' });
+    }
 
     if (!content || !content.trim()) {
       return res.status(400).json({ message: 'Nội dung bài viết không được để trống.' });

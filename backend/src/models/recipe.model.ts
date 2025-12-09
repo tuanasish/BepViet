@@ -14,7 +14,12 @@ const stepSchema = new Schema(
     order: { type: Number, required: true },
     title: String,
     content: { type: String, required: true },
+    // Giữ imageUrl cũ để tương thích, ưu tiên dùng images (mảng)
     imageUrl: String,
+    images: {
+      type: [String],
+      default: [],
+    },
   },
   { _id: false }
 );
@@ -88,6 +93,34 @@ const recipeSchema = new Schema(
       type: statsSchema,
       default: () => ({}),
     },
+    // Rating fields
+    ratingCount: {
+      type: Number,
+      default: 0,
+    },
+    ratingSum: {
+      type: Number,
+      default: 0,
+    },
+    ratings: [
+      {
+        userId: {
+          type: Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        value: {
+          type: Number,
+          min: 1,
+          max: 5,
+          required: true,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true,

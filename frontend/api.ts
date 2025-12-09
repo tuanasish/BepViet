@@ -195,7 +195,7 @@ export interface CreateMyRecipePayload {
   category: string;
   tags?: string[];
   ingredients?: Array<{ name: string; amount?: string; note?: string }>;
-  steps: Array<{ order?: number; title?: string; content: string; imageUrl?: string }>;
+  steps: Array<{ order?: number; title?: string; content: string; imageUrl?: string; images?: string[] }>;
 }
 
 export async function apiCreateMyRecipe(
@@ -252,8 +252,16 @@ export interface RecipeDetail {
   category: string;
   tags: string[];
   ingredients: { name: string; amount?: string; note?: string }[];
-  steps: { order: number; title?: string; content: string; imageUrl?: string }[];
+  steps: {
+    order: number;
+    title?: string;
+    content: string;
+    imageUrl?: string;
+    images?: string[];
+  }[];
   authorName: string;
+  ratingCount?: number;
+  averageRating?: number;
 }
 
 export async function apiGetRecipeDetail(
@@ -690,6 +698,29 @@ export async function apiRatePost(
   return (await res.json()) as { ratingCount: number; averageRating: number };
 }
 
+export async function apiRateRecipe(
+  recipeId: string,
+  value: number
+): Promise<{ ratingCount: number; averageRating: number }> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để đánh giá công thức');
+  }
+  const res = await fetch(`${API_BASE}/api/recipes/${recipeId}/rating`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không thể đánh giá công thức');
+  }
+  return (await res.json()) as { ratingCount: number; averageRating: number };
+}
+
 export async function apiViewPost(
   postId: string
 ): Promise<{ viewsCount: number }> {
@@ -878,7 +909,7 @@ export interface AdminRecipeUpdateData {
   category?: string;
   tags?: string[];
   ingredients?: Array<{ name: string; amount?: string; note?: string }>;
-  steps?: Array<{ order: number; title?: string; content: string; imageUrl?: string }>;
+  steps?: Array<{ order: number; title?: string; content: string; imageUrl?: string; images?: string[] }>;
   status?: 'draft' | 'pending_review' | 'published' | 'rejected';
 }
 
@@ -1030,6 +1061,7 @@ export interface AdminUser {
   avatarUrl?: string | null;
   role: string;
   status: string;
+  canPost?: boolean;
   createdAt: string;
 }
 
@@ -1106,6 +1138,40 @@ export async function apiUnlockUser(userId: string): Promise<void> {
   }
 }
 
+export async function apiBanUserPosting(userId: string): Promise<void> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để truy cập admin');
+  }
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/ban-posting`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không thể cấm đăng bài');
+  }
+}
+
+export async function apiUnbanUserPosting(userId: string): Promise<void> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để truy cập admin');
+  }
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/unban-posting`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không thể hủy cấm đăng bài');
+  }
+}
+
 // Admin Posts API
 export interface AdminPost {
   id: string;
@@ -1170,6 +1236,26 @@ export async function apiDeleteAdminPost(postId: string): Promise<void> {
     const data = await res.json().catch(() => null);
     throw new Error(data?.message || 'Không thể xóa bài đăng');
   }
+}
+
+export async function apiDeleteAdminPostsByDate(
+  date: string
+): Promise<{ message: string; deletedCount: number }> {
+  const token = getToken();
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để truy cập admin');
+  }
+  const res = await fetch(`${API_BASE}/api/admin/posts/by-date?date=${date}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.message || 'Không thể xóa bài đăng theo ngày');
+  }
+  return (await res.json()) as { message: string; deletedCount: number };
 }
 
 

@@ -30,6 +30,10 @@ const userSchema = new Schema(
       enum: ['active', 'locked'],
       default: 'active',
     },
+    canPost: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

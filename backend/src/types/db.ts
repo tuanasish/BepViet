@@ -29,6 +29,7 @@ export interface RecipeStep {
   title?: string;
   content: string;
   imageUrl?: string;
+   images?: string[];
 }
 
 export type RecipeStatus = 'draft' | 'pending_review' | 'published' | 'rejected';

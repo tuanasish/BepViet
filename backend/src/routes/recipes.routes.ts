@@ -1,5 +1,7 @@
 import express from 'express';
+import { Types } from 'mongoose';
 import { RecipeModel } from '../models/recipe.model';
+import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 
 const router = express.Router();
 
@@ -53,7 +55,7 @@ router.get('/', async (req, res) => {
       page?: string;
     };
 
-    const filter: any = { status: 'published' };
+    const filter: any = {};
 
     // Tìm kiếm text - chỉ tìm trong trường tên món (title)
     if (q && q.trim()) {
@@ -71,15 +73,20 @@ router.get('/', async (req, res) => {
     }
 
     // Filter theo vùng miền và tag (tìm trong tags)
-    // Nếu có cả region và tag, tìm recipes có CẢ HAI tags
-    if (region && region.trim() && tag && tag.trim()) {
-      filter.tags = {
-        $all: [new RegExp(region.trim(), 'i'), new RegExp(tag.trim(), 'i')],
-      };
-    } else if (region && region.trim()) {
-      filter.tags = { $in: [new RegExp(region.trim(), 'i')] };
-    } else if (tag && tag.trim()) {
-      filter.tags = { $in: [new RegExp(tag.trim(), 'i')] };
+    // Nếu region trống hoặc "Mọi miền": không filter theo vùng miền
+    const normalizedRegion = region?.trim();
+    const normalizedTag = tag?.trim();
+
+    if (normalizedRegion && normalizedRegion !== 'Mọi miền') {
+      if (normalizedTag) {
+        filter.tags = {
+          $all: [new RegExp(normalizedRegion, 'i'), new RegExp(normalizedTag, 'i')],
+        };
+      } else {
+        filter.tags = { $in: [new RegExp(normalizedRegion, 'i')] };
+      }
+    } else if (normalizedTag) {
+      filter.tags = { $in: [new RegExp(normalizedTag, 'i')] };
     }
 
     // Filter theo nguyên liệu
@@ -100,7 +107,7 @@ router.get('/', async (req, res) => {
 
     // Pagination
     const page = parseInt(pageParam || '1');
-    const limit = parseInt(limitParam || '50');
+    const limit = parseInt(limitParam || '12');
     const skip = (page - 1) * limit;
 
     // Tìm kiếm và sắp xếp kết quả
@@ -137,6 +144,76 @@ router.get('/', async (req, res) => {
   }
 });
 
+// POST /api/recipes/:id/rating - đánh giá công thức (1-5 sao)
+router.post(
+  '/:id/rating',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { id } = req.params;
+      const { value } = req.body as { value?: number };
+
+      if (!Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'ID công thức không hợp lệ.' });
+      }
+
+      const ratingValue = Number(value);
+      if (!ratingValue || ratingValue < 1 || ratingValue > 5) {
+        return res
+          .status(400)
+          .json({ message: 'Giá trị đánh giá phải từ 1 đến 5.' });
+      }
+
+      const recipe = await RecipeModel.findById(id);
+      if (!recipe) {
+        return res.status(404).json({ message: 'Không tìm thấy công thức.' });
+      }
+
+      // Tìm rating hiện tại của user
+      const existingIndex = (recipe as any).ratings.findIndex(
+        (r: any) => r.userId.toString() === userId
+      );
+
+      if (existingIndex >= 0) {
+        const existing = (recipe as any).ratings[existingIndex];
+        // Điều chỉnh ratingSum
+        (recipe as any).ratingSum =
+          (recipe as any).ratingSum - existing.value + ratingValue;
+        (recipe as any).ratings[existingIndex].value = ratingValue;
+        (recipe as any).ratings[existingIndex].createdAt = new Date();
+      } else {
+        // Thêm rating mới
+        (recipe as any).ratings.push({
+          userId,
+          value: ratingValue,
+          createdAt: new Date(),
+        });
+        (recipe as any).ratingCount = ((recipe as any).ratingCount || 0) + 1;
+        (recipe as any).ratingSum =
+          ((recipe as any).ratingSum || 0) + ratingValue;
+      }
+
+      await recipe.save();
+
+      const ratingCount = (recipe as any).ratingCount || 0;
+      const ratingSum = (recipe as any).ratingSum || 0;
+      const averageRating =
+        ratingCount > 0 ? Number((ratingSum / ratingCount).toFixed(2)) : 0;
+
+      return res.json({
+        ratingCount,
+        averageRating,
+      });
+    } catch (err) {
+      console.error('Error in POST /api/recipes/:id/rating', err);
+      return res
+        .status(500)
+        .json({ message: 'Lỗi server khi đánh giá công thức.' });
+    }
+  }
+);
+
 // GET /api/recipes/:slug - chi tiết công thức
 router.get('/:slug', async (req, res) => {
   try {
@@ -152,6 +229,11 @@ router.get('/:slug', async (req, res) => {
     if (!recipe) {
       return res.status(404).json({ message: 'Không tìm thấy công thức.' });
     }
+
+    const ratingCount = (recipe as any).ratingCount || 0;
+    const ratingSum = (recipe as any).ratingSum || 0;
+    const averageRating =
+      ratingCount > 0 ? Number((ratingSum / ratingCount).toFixed(2)) : 0;
 
     return res.json({
       id: recipe._id,
@@ -170,6 +252,8 @@ router.get('/:slug', async (req, res) => {
         (recipe as any).authorId && (recipe as any).authorId.name
           ? (recipe as any).authorId.name
           : 'Ẩn danh',
+      ratingCount,
+      averageRating,
     });
   } catch (err) {
     console.error('Error in GET /api/recipes/:slug', err);

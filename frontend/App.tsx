@@ -48,7 +48,7 @@ const App: React.FC = () => {
       </Routes>
       
       {/* Global Chatbot Button - hiển thị trên tất cả trang trừ admin */}
-      <ChatbotButton />
+      {/* <ChatbotButton /> */}
     </HashRouter>
   );
 };

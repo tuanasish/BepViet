@@ -4,6 +4,7 @@ import AdminSideBar from '../../components/AdminSideBar';
 import {
   apiGetAdminPosts,
   apiDeleteAdminPost,
+  apiDeleteAdminPostsByDate,
   AdminPost,
 } from '../../api';
 import toast from 'react-hot-toast';
@@ -18,6 +19,8 @@ const AdminPostPage: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [deleteDate, setDeleteDate] = useState('');
+  const [deletingByDate, setDeletingByDate] = useState(false);
 
   useEffect(() => {
     // Kiểm tra quyền admin
@@ -58,6 +61,30 @@ const AdminPostPage: React.FC = () => {
       toast.error(err.message || 'Không thể xóa bài đăng');
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleDeleteByDate = async () => {
+    if (!deleteDate) {
+      toast.error('Vui lòng chọn ngày');
+      return;
+    }
+
+    if (!window.confirm(`Bạn có chắc muốn xóa TẤT CẢ bài đăng trong ngày ${deleteDate}? Hành động này không thể hoàn tác!`)) {
+      return;
+    }
+
+    try {
+      setDeletingByDate(true);
+      const result = await apiDeleteAdminPostsByDate(deleteDate);
+      toast.success(result.message || `Đã xóa ${result.deletedCount} bài đăng`);
+      setDeleteDate('');
+      await loadPosts();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Không thể xóa bài đăng theo ngày');
+    } finally {
+      setDeletingByDate(false);
     }
   };
 
@@ -110,6 +137,30 @@ const AdminPostPage: React.FC = () => {
             >
               Tìm kiếm
             </button>
+          </div>
+
+          {/* Delete by Date */}
+          <div className="flex flex-col sm:flex-row gap-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-text-light dark:text-text-dark mb-2">
+                Xóa tất cả bài đăng trong ngày:
+              </label>
+              <input
+                type="date"
+                value={deleteDate}
+                onChange={(e) => setDeleteDate(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg border border-border-light dark:border-border-dark bg-white dark:bg-card-dark text-text-light dark:text-text-dark focus:outline-none focus:ring-2 focus:ring-red-500/50"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleDeleteByDate}
+                disabled={deletingByDate || !deleteDate}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingByDate ? 'Đang xóa...' : 'Xóa tất cả'}
+              </button>
+            </div>
           </div>
 
           {/* Posts List */}
@@ -275,6 +326,8 @@ const AdminPostPage: React.FC = () => {
 };
 
 export default AdminPostPage;
+
+
 
 
 

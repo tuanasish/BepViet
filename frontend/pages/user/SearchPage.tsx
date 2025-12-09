@@ -23,7 +23,7 @@ const SearchPage: React.FC = () => {
     timeMax: undefined,
     tag: searchParams.get('tag') || '',
     page: 1,
-    limit: 24,
+    limit: 12,
   }));
 
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -71,7 +71,7 @@ const SearchPage: React.FC = () => {
       timeMax: undefined,
       tag: '',
       page: 1,
-      limit: 24,
+      limit: 12,
     });
     setPage(1);
   };
@@ -86,7 +86,7 @@ const SearchPage: React.FC = () => {
     filters.tag;
 
   const categories = ['Món chính', 'Khai vị', 'Tráng miệng', 'Đồ uống', 'Bánh kẹo', 'Món chay', 'Món nhanh'];
-  const regions = ['Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên'];
+  const regions = ['Mọi miền', 'Miền Bắc', 'Miền Trung', 'Miền Nam', 'Tây Nguyên'];
   const timeRanges = [
     { label: 'Dưới 30 phút', min: undefined, max: 30 },
     { label: '30 - 60 phút', min: 30, max: 60 },
@@ -362,7 +362,7 @@ const SearchPage: React.FC = () => {
                           key={region}
                           className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-sm"
                           onClick={() => {
-                            handleFilterChange('region', region);
+                            handleFilterChange('region', region === 'Mọi miền' ? '' : region);
                             setShowRegionDropdown(false);
                           }}
                         >
